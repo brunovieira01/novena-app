@@ -184,6 +184,7 @@ function renderDetail() {
 // ── VOZ ───────────────────────────────────────────────────────────
 let isSpeaking = false;
 let autoAdvance = false;
+let shouldRestart = false;
 let voiceRate = parseFloat(localStorage.getItem('voiceRate') || '1.1');
 
 function getPortugueseVoice() {
@@ -194,7 +195,7 @@ function getPortugueseVoice() {
     || null;
 }
 
-// Retorna Promise que resolve quando o áudio termina
+// resolve(true) = terminou naturalmente, resolve(false) = cancelado
 function speakText(text) {
   return new Promise((resolve) => {
     window.speechSynthesis.cancel();
@@ -205,8 +206,8 @@ function speakText(text) {
     const voice = getPortugueseVoice();
     if (voice) utterance.voice = voice;
     utterance.onstart = () => { isSpeaking = true; updateVoiceBtn(); };
-    utterance.onend   = () => { isSpeaking = false; resolve(); };
-    utterance.onerror = () => { isSpeaking = false; resolve(); };
+    utterance.onend   = () => { isSpeaking = false; resolve(true); };
+    utterance.onerror = () => { isSpeaking = false; resolve(false); };
     window.speechSynthesis.speak(utterance);
   });
 }
@@ -291,8 +292,12 @@ async function startAutoRead() {
   for (let i = prayerStep; i < sections.length; i++) {
     if (!autoAdvance) break;
 
-    updatePrayerContent(sections, i, dia.titulo);
-    await speakText(sections[i].text);
+    let completed;
+    do {
+      shouldRestart = false;
+      updatePrayerContent(sections, i, dia.titulo);
+      completed = await speakText(sections[i].text);
+    } while (!completed && shouldRestart && autoAdvance);
 
     if (!autoAdvance) break;
 
@@ -434,6 +439,11 @@ function attachEvents() {
       localStorage.setItem('voiceRate', voiceRate);
       const display = document.getElementById('speed-display');
       if (display) display.textContent = voiceRate.toFixed(1) + '×';
+      // Se está falando, reinicia o trecho atual com o novo rate
+      if (isSpeaking || autoAdvance) {
+        shouldRestart = true;
+        window.speechSynthesis.cancel();
+      }
     });
   }
 
@@ -485,8 +495,8 @@ async function buscarNovena() {
     };
     state.novenas.unshift(novaNovena);
     saveState(state);
-    toast('Novena adicionada! 🙏', 'success');
     navigate('detail', novaNovena.id);
+    setTimeout(() => toast('Novena adicionada! 🙏', 'success'), 80);
   } catch (err) {
     console.error(err);
     toast('Erro de conexão. Verifique o servidor.', 'error');
@@ -524,8 +534,10 @@ function toast(msg, type = '') {
   if (!el) { el = document.createElement('div'); el.className = 'toast'; document.body.appendChild(el); }
   el.textContent = msg;
   el.className = `toast ${type}`;
-  requestAnimationFrame(() => { el.classList.add('show'); });
-  setTimeout(() => el.classList.remove('show'), 3000);
+  void el.offsetHeight; // força reflow para que a transição dispare
+  el.classList.add('show');
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
