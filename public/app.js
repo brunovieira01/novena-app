@@ -193,22 +193,21 @@ function getPortugueseVoice() {
     || null;
 }
 
-function speakText(text, onEnd) {
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'pt-BR';
-  utterance.rate = 0.82;
-  utterance.pitch = 1;
-  const voice = getPortugueseVoice();
-  if (voice) utterance.voice = voice;
-  utterance.onstart = () => { isSpeaking = true; updateVoiceBtn(); };
-  utterance.onend = () => {
-    isSpeaking = false;
-    updateVoiceBtn();
-    if (onEnd) onEnd();
-  };
-  utterance.onerror = () => { isSpeaking = false; updateVoiceBtn(); };
-  window.speechSynthesis.speak(utterance);
+// Retorna Promise que resolve quando o áudio termina
+function speakText(text) {
+  return new Promise((resolve) => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 0.82;
+    utterance.pitch = 1;
+    const voice = getPortugueseVoice();
+    if (voice) utterance.voice = voice;
+    utterance.onstart = () => { isSpeaking = true; updateVoiceBtn(); };
+    utterance.onend   = () => { isSpeaking = false; resolve(); };
+    utterance.onerror = () => { isSpeaking = false; resolve(); };
+    window.speechSynthesis.speak(utterance);
+  });
 }
 
 function stopSpeech() {
@@ -221,41 +220,81 @@ function stopSpeech() {
 function updateVoiceBtn() {
   const btn = document.getElementById('btn-voz');
   if (!btn) return;
-  if (autoAdvance) {
+  if (autoAdvance || isSpeaking) {
     btn.textContent = '⏹ Parar leitura';
-    btn.className = 'btn btn-ghost btn-full';
     btn.style.borderColor = 'rgba(220,80,80,0.4)';
     btn.style.color = '#e88';
   } else {
-    btn.textContent = '🔊 Ouvir esta seção';
-    btn.className = 'btn btn-ghost btn-full';
+    btn.textContent = '🔊 Ouvir';
     btn.style.borderColor = '';
     btn.style.color = '';
   }
 }
 
-function startAutoRead() {
+// Atualiza apenas o conteúdo da tela de oração, sem re-renderizar tudo
+function updatePrayerContent(sections, step, diaTitle) {
+  prayerStep = step;
+
+  const label = document.querySelector('.prayer-section-label');
+  const text  = document.querySelector('.prayer-text');
+  const dots  = document.querySelector('.prayer-dots');
+  const ind   = document.querySelector('.prayer-step-indicator');
+  const nav   = document.querySelector('.prayer-nav');
+
+  if (label) label.textContent = `${diaTitle} · ${sections[step].label}`;
+  if (text) {
+    text.style.animation = 'none';
+    void text.offsetWidth; // força reflow para reiniciar animação
+    text.style.animation = '';
+    text.textContent = sections[step].text;
+  }
+  if (dots) {
+    dots.innerHTML = sections.map((_, i) =>
+      `<div class="prayer-dot ${i === step ? 'active' : ''}"></div>`
+    ).join('');
+  }
+  if (ind) ind.textContent = `${step + 1}/${sections.length}`;
+
+  // Atualiza botões de navegação
+  if (nav) {
+    const isLast = step === sections.length - 1;
+    const prevBtn = step > 0 ? `<button class="btn btn-ghost" id="btn-anterior">← Anterior</button>` : '';
+    const navBtn  = isLast
+      ? `<button class="btn btn-gold" style="flex:1" id="btn-concluir-dia">✅ Concluir o ${prayerDay + 1}º dia</button>`
+      : `<button class="btn btn-primary" style="flex:1" id="btn-proximo">Próximo →</button>`;
+    nav.innerHTML = prevBtn + navBtn;
+    on('btn-proximo',     () => { stopSpeech(); prayerStep++; render(); });
+    on('btn-anterior',    () => { stopSpeech(); prayerStep = Math.max(0, prayerStep - 1); render(); });
+    on('btn-concluir-dia',() => { stopSpeech(); concluirDia(); });
+  }
+}
+
+async function startAutoRead() {
   const state = getState();
   const novena = state.novenas.find(n => n.id === currentNovennaId);
   if (!novena) return;
+
   const dia = novena.dados.dias[prayerDay];
   const sections = getPrayerSections(dia);
-  const step = Math.min(prayerStep, sections.length - 1);
 
   autoAdvance = true;
   updateVoiceBtn();
 
-  speakText(sections[step].text, () => {
-    if (!autoAdvance) return;
-    if (step < sections.length - 1) {
-      prayerStep++;
-      render();
-      setTimeout(() => startAutoRead(), 600);
-    } else {
-      autoAdvance = false;
-      updateVoiceBtn();
+  for (let i = prayerStep; i < sections.length; i++) {
+    if (!autoAdvance) break;
+
+    updatePrayerContent(sections, i, dia.titulo);
+    await speakText(sections[i].text);
+
+    if (!autoAdvance) break;
+
+    if (i < sections.length - 1) {
+      await new Promise(r => setTimeout(r, 2000));
     }
-  });
+  }
+
+  autoAdvance = false;
+  updateVoiceBtn();
 }
 
 // ── MODO ORAÇÃO ───────────────────────────────────────────────────
