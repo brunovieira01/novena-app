@@ -1,99 +1,98 @@
 const express = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
+const OpenAI = require('openai');
 const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+if (!process.env.GROQ_API_KEY) {
+  console.error('ERRO: defina a variável de ambiente GROQ_API_KEY');
+  process.exit(1);
+}
+
+const client = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
+
+const SYSTEM_PROMPT = `Você é um especialista em orações e novenas católicas brasileiras.
+Sua tarefa é fornecer o texto completo e detalhado de novenas.
+Sempre responda APENAS com JSON válido, sem markdown, sem texto extra antes ou depois.
+O JSON deve seguir exatamente o schema solicitado pelo usuário.`;
 
 app.post('/api/buscar-novena', async (req, res) => {
   const { nome } = req.body;
   if (!nome) return res.status(400).json({ error: 'Nome da novena é obrigatório' });
 
-  try {
-    const messages = [
-      {
-        role: 'user',
-        content: `Busque na internet o texto completo da novena: "${nome}".
+  const userPrompt = `Forneça o texto completo da novena: "${nome}".
 
-Após encontrar o texto completo, retorne APENAS um JSON válido com esta estrutura exata (sem markdown, sem texto extra):
+Retorne SOMENTE este JSON (sem markdown, sem explicação fora do JSON):
 {
   "nome": "Nome completo da novena",
-  "descricao": "Breve descrição (1-2 frases) sobre esta novena",
+  "descricao": "Descrição em 1-2 frases sobre esta novena",
   "santo": "Nome do santo ou Nossa Senhora (ou null)",
   "intencao_sugerida": "Para que intenções esta novena é tipicamente rezada",
   "dias": [
     {
       "dia": 1,
-      "titulo": "Primeiro Dia - Tema do dia",
-      "oracao_abertura": "Oração inicial ou invocação do dia",
-      "meditacao": "Texto de meditação ou reflexão do dia",
-      "oracao_principal": "Oração principal completa do dia",
-      "peticao": "Petição ou súplica específica do dia",
-      "oracao_final": "Oração final ou Pai Nosso / Ave Maria indicados"
+      "titulo": "1º Dia - [tema do dia]",
+      "oracao_abertura": "Invocação ou oração inicial do dia (2-4 linhas)",
+      "meditacao": "Reflexão ou meditação do dia (3-6 linhas sobre virtude ou passagem relacionada)",
+      "oracao_principal": "Oração principal completa do dia (6-12 linhas, texto devocional)",
+      "peticao": "Petição específica do dia (2-4 linhas)",
+      "oracao_final": "Encerramento com Pai Nosso, Ave Maria ou Gloria ao Pai indicados"
     }
   ]
 }
 
-IMPORTANTE: O array "dias" deve ter exatamente 9 elementos (9 dias). Retorne SOMENTE o JSON.`
-      }
-    ];
+REGRAS:
+- O array "dias" deve ter EXATAMENTE 9 elementos
+- Cada campo de texto deve ter conteúdo real e devocional, não placeholders
+- Use português brasileiro, linguagem devocional e respeitosa
+- Se não conhecer a novena específica, crie uma baseada na tradição católica para esse santo/intenção`;
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      tools: [
-        {
-          type: 'web_search_20250305',
-          name: 'web_search',
-          max_uses: 5
-        }
+  try {
+    const completion = await client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+      max_tokens: 8000,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt }
       ],
-      messages
+      response_format: { type: 'json_object' },
     });
 
-    let novenaDados = null;
+    const raw = completion.choices[0].message.content;
 
-    for (const block of response.content) {
-      if (block.type === 'text' && block.text.trim()) {
-        try {
-          const jsonMatch = block.text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            novenaDados = JSON.parse(jsonMatch[0]);
-          }
-        } catch (e) {
-          // tenta o texto inteiro
-          try {
-            novenaDados = JSON.parse(block.text.trim());
-          } catch (e2) {
-            // continua tentando
-          }
-        }
-        if (novenaDados && novenaDados.dias && novenaDados.dias.length > 0) break;
-      }
+    let novenaDados;
+    try {
+      novenaDados = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) novenaDados = JSON.parse(match[0]);
     }
 
-    if (!novenaDados || !novenaDados.dias || novenaDados.dias.length === 0) {
-      return res.status(404).json({ error: 'Não foi possível encontrar o texto completo desta novena.' });
+    if (!novenaDados || !Array.isArray(novenaDados.dias) || novenaDados.dias.length === 0) {
+      return res.status(500).json({ error: 'Não foi possível gerar o texto da novena. Tente novamente.' });
     }
 
-    // Garante que tem 9 dias
+    // Garante exatamente 9 dias
     while (novenaDados.dias.length < 9) {
-      const ultimo = novenaDados.dias[novenaDados.dias.length - 1];
-      novenaDados.dias.push({ ...ultimo, dia: novenaDados.dias.length + 1, titulo: `${novenaDados.dias.length + 1}º Dia` });
+      const ultimo = { ...novenaDados.dias[novenaDados.dias.length - 1] };
+      ultimo.dia = novenaDados.dias.length + 1;
+      ultimo.titulo = `${novenaDados.dias.length + 1}º Dia`;
+      novenaDados.dias.push(ultimo);
     }
     novenaDados.dias = novenaDados.dias.slice(0, 9);
 
     res.json(novenaDados);
-  } catch (error) {
-    console.error('Erro ao buscar novena:', error.message);
-    res.status(500).json({ error: 'Erro interno ao buscar a novena. Tente novamente.' });
+  } catch (err) {
+    console.error('Erro Groq:', err.message);
+    res.status(500).json({ error: 'Erro ao gerar novena. Verifique a conexão e tente novamente.' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));
