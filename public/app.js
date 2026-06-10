@@ -289,7 +289,7 @@ async function startAutoRead() {
     if (!autoAdvance) break;
 
     if (i < sections.length - 1) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 
