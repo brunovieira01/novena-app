@@ -20,6 +20,11 @@ let currentNovennaId = null;
 let prayerDay = null;
 let showModal = false;
 
+// Estado da tela de seleção
+let selecaoOpcoes = [];
+let selecaoIndex = 0;
+let selecaoDias = 9;
+
 function navigate(view, novennaId = null, day = null) {
   currentView = view;
   currentNovennaId = novennaId;
@@ -32,6 +37,7 @@ function render() {
   const app = document.getElementById('app');
   if (currentView === 'home') app.innerHTML = renderHome();
   else if (currentView === 'loading') app.innerHTML = renderLoading();
+  else if (currentView === 'selecao') app.innerHTML = renderSelecao();
   else if (currentView === 'detail') app.innerHTML = renderDetail();
   else if (currentView === 'prayer') app.innerHTML = renderPrayer();
   attachEvents();
@@ -129,6 +135,42 @@ function renderLoading() {
     </div>`;
 }
 
+// ── SELEÇÃO DE NOVENA ────────────────────────────────────────────
+function renderSelecao() {
+  const opcoes = selecaoOpcoes.map((o, i) => `
+    <div class="opcao-card ${i === selecaoIndex ? 'selecionada' : ''}" data-idx="${i}">
+      <div class="opcao-radio">${i === selecaoIndex ? '●' : '○'}</div>
+      <div class="opcao-info">
+        <div class="opcao-nome">${o.nome}</div>
+        <div class="opcao-desc">${o.descricao || ''}</div>
+        ${o.observacao ? `<div class="opcao-obs">${o.observacao}</div>` : ''}
+      </div>
+      <div class="opcao-dias-badge">${o.dias}d</div>
+    </div>`).join('');
+
+  return `
+    ${renderHeader(true)}
+    <div class="selecao-container">
+      <h2 class="section-title">Selecione a novena</h2>
+      <p class="selecao-sub">Escolha a versão correta e confirme o número de dias</p>
+
+      <div class="opcoes-lista">${opcoes}</div>
+
+      <div class="dias-picker">
+        <span class="dias-picker-label">Número de dias</span>
+        <div class="dias-picker-ctrl">
+          <button class="dias-btn" id="btn-dias-menos">−</button>
+          <span class="dias-valor" id="dias-valor">${selecaoDias}</span>
+          <button class="dias-btn" id="btn-dias-mais">+</button>
+        </div>
+      </div>
+
+      <button class="btn btn-gold btn-full btn-lg" id="btn-confirmar-selecao">
+        Buscar novena de ${selecaoDias} dias →
+      </button>
+    </div>`;
+}
+
 // ── DETALHE ───────────────────────────────────────────────────────
 function renderDetail() {
   const state = getState();
@@ -136,11 +178,12 @@ function renderDetail() {
   if (!novena) { navigate('home'); return ''; }
 
   const { dados, diasConcluidos } = novena;
+  const totalDias = dados.dias.length;
   const concluidos = diasConcluidos.filter(Boolean).length;
-  const hoje = concluidos < 9 ? concluidos : 8; // índice 0-based do dia atual
-  const concluida = concluidos === 9;
+  const hoje = concluidos < totalDias ? concluidos : totalDias - 1;
+  const concluida = concluidos === totalDias;
 
-  const diasButtons = Array.from({ length: 9 }, (_, i) => {
+  const diasButtons = Array.from({ length: totalDias }, (_, i) => {
     const done = diasConcluidos[i];
     const isHoje = !concluida && i === hoje;
     const isFuturo = !done && i > hoje;
@@ -168,7 +211,7 @@ function renderDetail() {
         ${dados.intencao_sugerida ? `<span class="detail-intencao">✨ ${dados.intencao_sugerida}</span>` : ''}
         <div class="detail-progress-info">
           <div class="progress-stat"><div class="num">${concluidos}</div><div class="lbl">dias rezados</div></div>
-          <div class="progress-stat"><div class="num">${9 - concluidos}</div><div class="lbl">dias restantes</div></div>
+          <div class="progress-stat"><div class="num">${totalDias - concluidos}</div><div class="lbl">dias restantes</div></div>
         </div>
       </div>
 
@@ -398,6 +441,23 @@ function attachEvents() {
     card.addEventListener('click', () => navigate('detail', card.dataset.id));
   });
 
+  // Tela de seleção
+  document.querySelectorAll('.opcao-card[data-idx]').forEach(card => {
+    card.addEventListener('click', () => {
+      selecaoIndex = parseInt(card.dataset.idx);
+      selecaoDias = selecaoOpcoes[selecaoIndex].dias;
+      render();
+    });
+  });
+  on('btn-dias-menos', () => {
+    if (selecaoDias > 1) { selecaoDias--; atualizarDiasPicker(); }
+  });
+  on('btn-dias-mais', () => {
+    selecaoDias++;
+    atualizarDiasPicker();
+  });
+  on('btn-confirmar-selecao', confirmarSelecao);
+
   // Detalhe
   on('btn-rezar-hoje', () => {
     const state = getState();
@@ -463,6 +523,7 @@ function on(id, fn) {
 }
 
 // ── AÇÕES ─────────────────────────────────────────────────────────
+// Etapa 1: pesquisa opções
 async function buscarNovena() {
   const input = document.getElementById('input-novena');
   const nome = input ? input.value.trim() : '';
@@ -472,17 +533,56 @@ async function buscarNovena() {
   navigate('loading');
 
   try {
-    const res = await fetch('/api/buscar-novena', {
+    const res = await fetch('/api/pesquisar-novena', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nome })
     });
+    const data = await res.json();
 
+    if (!res.ok || !data.opcoes || data.opcoes.length === 0) {
+      toast(data.error || 'Nenhuma opção encontrada', 'error');
+      navigate('home');
+      return;
+    }
+
+    selecaoOpcoes = data.opcoes;
+    selecaoIndex = 0;
+    selecaoDias = data.opcoes[0].dias;
+    navigate('selecao');
+  } catch (err) {
+    console.error(err);
+    toast('Erro de conexão.', 'error');
+    navigate('home');
+  }
+}
+
+// Atualiza apenas o número de dias no picker sem re-renderizar tudo
+function atualizarDiasPicker() {
+  const val = document.getElementById('dias-valor');
+  const btn = document.getElementById('btn-confirmar-selecao');
+  if (val) val.textContent = selecaoDias;
+  if (btn) btn.textContent = `Buscar novena de ${selecaoDias} dias →`;
+}
+
+// Etapa 2: busca o texto completo com o nome e dias confirmados
+async function confirmarSelecao() {
+  const opcao = selecaoOpcoes[selecaoIndex];
+  if (!opcao) return;
+
+  navigate('loading');
+
+  try {
+    const res = await fetch('/api/buscar-novena', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome: opcao.nome, dias: selecaoDias })
+    });
     const data = await res.json();
 
     if (!res.ok) {
-      toast(data.error || 'Erro ao buscar novena', 'error');
-      navigate('home');
+      toast(data.error || 'Erro ao gerar novena', 'error');
+      navigate('selecao');
       return;
     }
 
@@ -490,7 +590,7 @@ async function buscarNovena() {
     const novaNovena = {
       id: genId(),
       dataInicio: new Date().toISOString().slice(0, 10),
-      diasConcluidos: Array(9).fill(false),
+      diasConcluidos: Array(data.dias.length).fill(false),
       dados: data
     };
     state.novenas.unshift(novaNovena);
@@ -499,8 +599,8 @@ async function buscarNovena() {
     setTimeout(() => toast('Novena adicionada! 🙏', 'success'), 80);
   } catch (err) {
     console.error(err);
-    toast('Erro de conexão. Verifique o servidor.', 'error');
-    navigate('home');
+    toast('Erro de conexão.', 'error');
+    navigate('selecao');
   }
 }
 

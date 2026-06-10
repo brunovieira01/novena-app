@@ -1,11 +1,13 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/buscar-novena.js", "use": "@vercel/node", "config": { "maxDuration": 30 } },
+    { "src": "api/buscar-novena.js",    "use": "@vercel/node", "config": { "maxDuration": 30 } },
+    { "src": "api/pesquisar-novena.js", "use": "@vercel/node", "config": { "maxDuration": 15 } },
     { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/buscar-novena", "dest": "/api/buscar-novena.js" },
+    { "src": "/api/buscar-novena",    "dest": "/api/buscar-novena.js" },
+    { "src": "/api/pesquisar-novena", "dest": "/api/pesquisar-novena.js" },
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }

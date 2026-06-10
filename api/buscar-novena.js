@@ -7,17 +7,18 @@ Sempre responda APENAS com JSON válido, sem markdown, sem texto extra antes ou 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
 
-  const { nome } = req.body;
+  const { nome, dias: diasSolicitados } = req.body;
   if (!nome) return res.status(400).json({ error: 'Nome da novena é obrigatório' });
-
   if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'Chave de API não configurada no servidor' });
+
+  const totalDias = Math.max(1, parseInt(diasSolicitados) || 9);
 
   const client = new OpenAI({
     apiKey: process.env.GROQ_API_KEY,
     baseURL: 'https://api.groq.com/openai/v1',
   });
 
-  const userPrompt = `Forneça o texto completo da novena: "${nome}".
+  const userPrompt = `Forneça o texto completo da novena: "${nome}" com exatamente ${totalDias} dias.
 
 Retorne SOMENTE este JSON (sem markdown, sem explicação fora do JSON):
 {
@@ -39,16 +40,17 @@ Retorne SOMENTE este JSON (sem markdown, sem explicação fora do JSON):
 }
 
 REGRAS:
-- O array "dias" deve ter EXATAMENTE 9 elementos
+- O array "dias" deve ter EXATAMENTE ${totalDias} elementos
 - Cada campo deve ter conteúdo real e devocional, não placeholders
 - Use português brasileiro, linguagem devocional e respeitosa
+- Distribua os temas adequadamente ao longo dos ${totalDias} dias
 - Se não conhecer a novena específica, crie uma baseada na tradição católica para esse santo/intenção`;
 
   try {
     const completion = await client.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       temperature: 0.3,
-      max_tokens: 8000,
+      max_tokens: totalDias > 9 ? 16000 : 8000,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt }
@@ -58,25 +60,21 @@ REGRAS:
 
     const raw = completion.choices[0].message.content;
     let novenaDados;
-
-    try {
-      novenaDados = JSON.parse(raw);
-    } catch {
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) novenaDados = JSON.parse(match[0]);
-    }
+    try { novenaDados = JSON.parse(raw); }
+    catch { const m = raw.match(/\{[\s\S]*\}/); if (m) novenaDados = JSON.parse(m[0]); }
 
     if (!novenaDados || !Array.isArray(novenaDados.dias) || novenaDados.dias.length === 0) {
       return res.status(500).json({ error: 'Não foi possível gerar o texto da novena. Tente novamente.' });
     }
 
-    while (novenaDados.dias.length < 9) {
+    // Completa se vieram menos dias que o solicitado
+    while (novenaDados.dias.length < totalDias) {
       const ultimo = { ...novenaDados.dias[novenaDados.dias.length - 1] };
       ultimo.dia = novenaDados.dias.length + 1;
       ultimo.titulo = `${novenaDados.dias.length + 1}º Dia`;
       novenaDados.dias.push(ultimo);
     }
-    novenaDados.dias = novenaDados.dias.slice(0, 9);
+    novenaDados.dias = novenaDados.dias.slice(0, totalDias);
 
     res.json(novenaDados);
   } catch (err) {
