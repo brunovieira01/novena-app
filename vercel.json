@@ -1,5 +1,13 @@
 {
-  "outputDirectory": "public",
+  "version": 2,
+  "builds": [
+    { "src": "api/buscar-novena.js", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/buscar-novena", "dest": "/api/buscar-novena.js" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ],
   "functions": {
     "api/buscar-novena.js": {
       "maxDuration": 30
