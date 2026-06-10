@@ -181,6 +181,83 @@ function renderDetail() {
     </div>`;
 }
 
+// ── VOZ ───────────────────────────────────────────────────────────
+let isSpeaking = false;
+let autoAdvance = false;
+
+function getPortugueseVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  return voices.find(v => v.lang === 'pt-BR')
+    || voices.find(v => v.lang.startsWith('pt'))
+    || voices[0]
+    || null;
+}
+
+function speakText(text, onEnd) {
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'pt-BR';
+  utterance.rate = 0.82;
+  utterance.pitch = 1;
+  const voice = getPortugueseVoice();
+  if (voice) utterance.voice = voice;
+  utterance.onstart = () => { isSpeaking = true; updateVoiceBtn(); };
+  utterance.onend = () => {
+    isSpeaking = false;
+    updateVoiceBtn();
+    if (onEnd) onEnd();
+  };
+  utterance.onerror = () => { isSpeaking = false; updateVoiceBtn(); };
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeech() {
+  autoAdvance = false;
+  isSpeaking = false;
+  window.speechSynthesis.cancel();
+  updateVoiceBtn();
+}
+
+function updateVoiceBtn() {
+  const btn = document.getElementById('btn-voz');
+  if (!btn) return;
+  if (autoAdvance) {
+    btn.textContent = '⏹ Parar leitura';
+    btn.className = 'btn btn-ghost btn-full';
+    btn.style.borderColor = 'rgba(220,80,80,0.4)';
+    btn.style.color = '#e88';
+  } else {
+    btn.textContent = '🔊 Ouvir esta seção';
+    btn.className = 'btn btn-ghost btn-full';
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  }
+}
+
+function startAutoRead() {
+  const state = getState();
+  const novena = state.novenas.find(n => n.id === currentNovennaId);
+  if (!novena) return;
+  const dia = novena.dados.dias[prayerDay];
+  const sections = getPrayerSections(dia);
+  const step = Math.min(prayerStep, sections.length - 1);
+
+  autoAdvance = true;
+  updateVoiceBtn();
+
+  speakText(sections[step].text, () => {
+    if (!autoAdvance) return;
+    if (step < sections.length - 1) {
+      prayerStep++;
+      render();
+      setTimeout(() => startAutoRead(), 600);
+    } else {
+      autoAdvance = false;
+      updateVoiceBtn();
+    }
+  });
+}
+
 // ── MODO ORAÇÃO ───────────────────────────────────────────────────
 let prayerStep = 0;
 
@@ -233,6 +310,7 @@ function renderPrayer() {
 
       <div class="prayer-footer">
         <div class="prayer-dots">${dots}</div>
+        <button class="btn btn-ghost btn-full" id="btn-voz">🔊 Ouvir esta seção</button>
         <div class="prayer-nav">
           ${prevBtn}
           ${navBtn}
@@ -287,10 +365,19 @@ function attachEvents() {
   });
 
   // Modo oração
-  on('btn-fechar-prayer', () => navigate('detail', currentNovennaId));
-  on('btn-proximo', () => { prayerStep++; render(); });
-  on('btn-anterior', () => { prayerStep = Math.max(0, prayerStep - 1); render(); });
-  on('btn-concluir-dia', concluirDia);
+  on('btn-fechar-prayer', () => { stopSpeech(); navigate('detail', currentNovennaId); });
+  on('btn-proximo', () => { stopSpeech(); prayerStep++; render(); });
+  on('btn-anterior', () => { stopSpeech(); prayerStep = Math.max(0, prayerStep - 1); render(); });
+  on('btn-concluir-dia', () => { stopSpeech(); concluirDia(); });
+
+  // Voz
+  on('btn-voz', () => {
+    if (autoAdvance || isSpeaking) {
+      stopSpeech();
+    } else {
+      startAutoRead();
+    }
+  });
 }
 
 function on(id, fn) {

@@ -516,9 +516,57 @@ body {
 .toast.success { border-color: rgba(76,175,130,0.4); color: var(--done); }
 .toast.error { border-color: rgba(220,80,80,0.4); color: #e88; }
 
-/* ── RESPONSIVO ── */
-@media (max-width: 400px) {
-  .dias-grid { grid-template-columns: repeat(3, 1fr); }
-  .prayer-text { font-size: 16px; }
-  .detail-name { font-size: 22px; }
+/* ── RESPONSIVO / MOBILE ── */
+
+/* toque mais generoso nos botões */
+@media (hover: none) {
+  .btn { min-height: 48px; }
+  .dia-btn { min-height: 72px; }
+  .novena-card { padding: 16px; }
+}
+
+/* tela pequena (≤ 480px) */
+@media (max-width: 480px) {
+  .header { padding: 14px 16px; }
+  .header-title { font-size: 17px; }
+
+  .home-container { padding: 20px 14px; }
+  .detail-container { padding: 20px 14px; }
+
+  .detail-name { font-size: 21px; }
+  .detail-desc { font-size: 13px; }
+  .detail-hero { padding: 24px 14px; }
+
+  .dias-grid { gap: 8px; margin-bottom: 20px; }
+  .dia-btn { padding: 12px 4px; border-radius: 10px; }
+  .dia-num { font-size: 18px; }
+  .dia-label { font-size: 10px; }
+
+  /* oração: texto scrollável em vez de centralizado verticalmente */
+  .prayer-view { display: block; overflow-y: auto; }
+  .prayer-body {
+    flex: none;
+    justify-content: flex-start;
+    padding: 24px 16px 12px;
+    overflow-y: auto;
+    max-height: calc(100dvh - 180px);
+  }
+  .prayer-text {
+    font-size: 16px;
+    line-height: 1.75;
+    text-align: left;
+  }
+  .prayer-section-label { text-align: left; margin-bottom: 12px; }
+  .prayer-footer { padding: 12px 16px 20px; }
+
+  /* modal */
+  .modal { padding: 24px 18px; }
+  .modal-title { font-size: 19px; }
+}
+
+/* tela muito pequena (≤ 360px) */
+@media (max-width: 360px) {
+  .detail-name { font-size: 18px; }
+  .prayer-text { font-size: 15px; }
+  .btn-lg { padding: 12px 20px; font-size: 15px; }
 }
