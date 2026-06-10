@@ -184,6 +184,7 @@ function renderDetail() {
 // ── VOZ ───────────────────────────────────────────────────────────
 let isSpeaking = false;
 let autoAdvance = false;
+let voiceRate = parseFloat(localStorage.getItem('voiceRate') || '1.1');
 
 function getPortugueseVoice() {
   const voices = window.speechSynthesis.getVoices();
@@ -199,7 +200,7 @@ function speakText(text) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'pt-BR';
-    utterance.rate = 0.82;
+    utterance.rate = voiceRate;
     utterance.pitch = 1;
     const voice = getPortugueseVoice();
     if (voice) utterance.voice = voice;
@@ -254,6 +255,13 @@ function updatePrayerContent(sections, step, diaTitle) {
     ).join('');
   }
   if (ind) ind.textContent = `${step + 1}/${sections.length}`;
+
+  // Atualiza preview da próxima seção
+  const nextSection = step < sections.length - 1 ? sections[step + 1] : null;
+  const nextLabel = document.getElementById('prayer-next-label');
+  const nextText  = document.getElementById('prayer-next-text');
+  if (nextLabel) nextLabel.textContent = nextSection ? `A seguir · ${nextSection.label}` : '';
+  if (nextText)  nextText.textContent  = nextSection ? nextSection.text : '';
 
   // Atualiza botões de navegação
   if (nav) {
@@ -320,6 +328,7 @@ function renderPrayer() {
   const total = sections.length;
   const step = Math.min(prayerStep, total - 1);
   const section = sections[step];
+  const nextSection = step < total - 1 ? sections[step + 1] : null;
   const isLast = step === total - 1;
 
   const dots = sections.map((_, i) =>
@@ -345,11 +354,19 @@ function renderPrayer() {
       <div class="prayer-body">
         <div class="prayer-section-label">${dia.titulo} · ${section.label}</div>
         <div class="prayer-text">${section.text}</div>
+        <div class="prayer-next-label" id="prayer-next-label">${nextSection ? `A seguir · ${nextSection.label}` : ''}</div>
+        <div class="prayer-next" id="prayer-next-text">${nextSection ? nextSection.text : ''}</div>
       </div>
 
       <div class="prayer-footer">
         <div class="prayer-dots">${dots}</div>
-        <button class="btn btn-ghost btn-full" id="btn-voz">🔊 Ouvir esta seção</button>
+        <div class="speed-control">
+          <span class="speed-label">🐢</span>
+          <input type="range" id="voice-speed" min="0.6" max="1.8" step="0.1" value="${voiceRate}">
+          <span class="speed-label">🐇</span>
+          <span class="speed-value" id="speed-display">${voiceRate.toFixed(1)}×</span>
+        </div>
+        <button class="btn btn-ghost btn-full" id="btn-voz">🔊 Ouvir</button>
         <div class="prayer-nav">
           ${prevBtn}
           ${navBtn}
@@ -408,6 +425,17 @@ function attachEvents() {
   on('btn-proximo', () => { stopSpeech(); prayerStep++; render(); });
   on('btn-anterior', () => { stopSpeech(); prayerStep = Math.max(0, prayerStep - 1); render(); });
   on('btn-concluir-dia', () => { stopSpeech(); concluirDia(); });
+
+  // Slider de velocidade
+  const slider = document.getElementById('voice-speed');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      voiceRate = parseFloat(slider.value);
+      localStorage.setItem('voiceRate', voiceRate);
+      const display = document.getElementById('speed-display');
+      if (display) display.textContent = voiceRate.toFixed(1) + '×';
+    });
+  }
 
   // Voz
   on('btn-voz', () => {
