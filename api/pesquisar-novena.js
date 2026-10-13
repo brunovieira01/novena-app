@@ -1,7 +1,15 @@
 const OpenAI = require('openai');
 
 module.exports = async (req, res) => {
+  if (req.method === 'GET') {
+    return res.status(400).json({
+      error: 'Este endpoint exige método POST. Envie o nome da novena em JSON.',
+      exemplo: { nome: 'Nossa Senhora Aparecida' }
+    });
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
+
   const { nome } = req.body;
   if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
   if (!process.env.GROQ_API_KEY) return res.status(500).json({ error: 'API key não configurada' });
@@ -35,7 +43,7 @@ REGRAS IMPORTANTES:
 
   try {
     const completion = await client.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
       temperature: 0.2,
       max_tokens: 1000,
       messages: [
@@ -54,7 +62,6 @@ REGRAS IMPORTANTES:
       return res.status(404).json({ error: 'Não foi possível encontrar opções para esta novena.' });
     }
 
-    // Garante que dias é número válido em cada opção
     data.opcoes = data.opcoes.map(o => ({ ...o, dias: Math.max(1, parseInt(o.dias) || 9) }));
 
     res.json(data);
