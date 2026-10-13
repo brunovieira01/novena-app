@@ -11,6 +11,8 @@ if (!process.env.GROQ_API_KEY) {
   process.exit(1);
 }
 
+const MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
 const client = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: 'https://api.groq.com/openai/v1',
@@ -54,7 +56,7 @@ REGRAS:
 
   try {
     const completion = await client.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: MODEL,
       temperature: 0.3,
       max_tokens: 8000,
       messages: [
